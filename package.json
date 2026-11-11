@@ -1,0 +1,25 @@
+{
+  "name": "qingming-lu",
+  "version": "1.0.0",
+  "private": true,
+  "description": "《青冥录》—— isometric xianxia pixel web game (Phaser 4 + PixelFX)",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5173",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 4173",
+    "fx:render": "node vfx/tools/render.mjs",
+    "fx:check": "node vfx/tools/check.mjs",
+    "fx:act": "node vfx/tools/act.mjs",
+    "test:screens": "node scripts/screenshot.mjs"
+  },
+  "dependencies": {
+    "phaser": "4.2.1",
+    "pixelfx": "file:./vendor/pixelfx"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^7.2.2",
+    "playwright": "^1.56.1"
+  }
+}
