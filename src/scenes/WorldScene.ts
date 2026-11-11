@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { ENEMY_MAP, EVENT_MAP, ITEM_MAP, NPC_MAP, REGION_MAP, SKILL_MAP, beastFromEnemy } from "../data";
-import { ensureChar } from "../gen/sprites";
+import { ensureChar, styleForEnemy, styleForNpc } from "../gen/sprites";
+import { FONT_SM } from "../hud/Hud";
 import { Hud } from "../hud/Hud";
 import { Rng } from "../rng";
 import { GameState } from "../state";
@@ -145,12 +146,46 @@ export class WorldScene extends Phaser.Scene {
     c.height = Math.ceil(b.h);
     const ctx = c.getContext("2d")!;
     ctx.imageSmoothingEnabled = false;
-    for (let y = 0; y < this.map.h; y++) for (let x = 0; x < this.map.w; x++) {
+    const srcOf = (key: string) => {
+      if (!this.textures.exists(key)) return undefined;
+      return this.textures.get(key).getSourceImage() as HTMLCanvasElement | HTMLImageElement;
+    };
+    const order: [number, number][] = [];
+    for (let y = 0; y < this.map.h; y++) for (let x = 0; x < this.map.w; x++) order.push([x, y]);
+    order.sort((a, b) => (a[0] + a[1]) - (b[0] + b[1]));
+    const biome = REGION_MAP[this.map.id]?.biome;
+    const isLand = (g: string) => g !== "water" && g !== "shallow" && g !== "cliff";
+    for (const [x, y] of order) {
       const cell = cellAt(this.map, x, y)!;
-      const tex = this.textures.get("tile_" + cell.g);
-      const src = (tex.getSourceImage() as HTMLCanvasElement | HTMLImageElement);
       const p = iso(x, y);
-      ctx.drawImage(src, p.x - 16 - b.x, p.y - 8 - b.y);
+      const variant = ((x * 3 + y * 7) & 1) ? "_b" : "";
+      if (cell.g === "cliff") {
+        const block =
+          this.map.id === "dungeon_mine" ? "block_mine" :
+          this.map.id === "dungeon_canzhao" ? "block_stone" :
+          biome === "forbidden" ? "block_ash" :
+          biome === "ruins" ? "block_stone" :
+          "block_cliff";
+        const src = srcOf(block) ?? srcOf("tile_cliff");
+        if (src) ctx.drawImage(src, p.x - 16 - b.x, p.y - 8 - b.y);
+        continue;
+      }
+      const tileKey = "tile_" + cell.g + (srcOf("tile_" + cell.g + variant) ? variant : "");
+      const src = srcOf(tileKey) ?? srcOf("tile_grass");
+      if (src) ctx.drawImage(src, p.x - 16 - b.x, p.y - 8 - b.y);
+      // shore foam on water next to land
+      if (cell.g === "water" || cell.g === "shallow") {
+        const nbs: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+        for (const [dx, dy] of nbs) {
+          const n = cellAt(this.map, x + dx, y + dy);
+          if (!n || !isLand(n.g)) continue;
+          ctx.fillStyle = "rgba(180, 230, 230, 0.45)";
+          const sx = p.x - 16 - b.x + 16 + dx * 6;
+          const sy = p.y - 8 - b.y + 8 + dy * 3;
+          ctx.fillRect(sx | 0, sy | 0, 2, 1);
+          ctx.fillRect((sx + 2) | 0, (sy + 1) | 0, 1, 1);
+        }
+      }
     }
     if (this.textures.exists("ground_map")) this.textures.remove("ground_map");
     this.textures.addCanvas("ground_map", c);
@@ -204,15 +239,15 @@ export class WorldScene extends Phaser.Scene {
     const p = iso(s.tx, s.ty);
     if (s.kind === "npc") {
       const npc = NPC_MAP[s.id];
-      const key = ensureChar(this.textures, "npc_" + s.id, npc?.palette ?? [0x203028, 0x4a7060, 0xc8d8c0], { weapon: false });
+      const key = ensureChar(this.textures, "npc_" + s.id, npc?.palette ?? [0x203028, 0x4a7060, 0xc8d8c0], { weapon: false, style: styleForNpc(s.id) });
       const sprite = this.add.image(p.x, p.y, `${key}_0_0`).setOrigin(0.5, 0.92).setDepth(depthOf(s.tx, s.ty, 4));
       this.actors.push({ kind: "npc", id: s.id, tx: s.tx, ty: s.ty, sprite, dir: 0, frame: 0, ft: 0, hp: 1, maxHp: 1, atk: 0, def: 0, speed: 0, dead: false, flash: 0, lock: 0, cd: 0, aggro: false, name: npc?.name });
     } else if (s.kind === "enemy" || s.kind === "boss") {
       const def = ENEMY_MAP[s.id];
       if (!def) return;
-      const key = ensureChar(this.textures, "en_" + s.id, def.palette, { weapon: def.kind === "human" || def.kind === "boss", horns: def.kind !== "human", beast: def.kind === "beast" });
+      const key = ensureChar(this.textures, "en_" + s.id, def.palette, { weapon: def.kind === "human" || def.named, style: styleForEnemy(s.id, def.kind, def.motif, def.boss) });
       const sprite = this.add.image(p.x, p.y, `${key}_0_0`).setOrigin(0.5, 0.92).setDepth(depthOf(s.tx, s.ty, 4));
-      const bar = this.add.rectangle(p.x, p.y - 22, 16, 2, 0xc04040).setOrigin(0.5, 1).setDepth(depthOf(s.tx, s.ty, 6));
+      const bar = this.add.rectangle(p.x, p.y - 28, 16, 2, 0xc04040).setOrigin(0.5, 1).setDepth(depthOf(s.tx, s.ty, 6));
       this.actors.push({
         kind: s.kind, id: s.id, enemyId: s.id, tx: s.tx + rng.float(-0.2, 0.2), ty: s.ty + rng.float(-0.2, 0.2),
         sprite, dir: 0, frame: 0, ft: 0, hp: def.hp, maxHp: def.hp, atk: def.atk, def: def.def,
@@ -336,7 +371,7 @@ export class WorldScene extends Phaser.Scene {
       if (key && this.textures.exists(key)) a.sprite.setTexture(key);
       if (a.flash > 0) { a.flash -= 0.05; a.sprite.setTint(0xff8080); } else a.sprite.clearTint();
       if (a.bar) {
-        a.bar.setPosition(p.x, p.y - 22).setDepth(depthOf(a.tx, a.ty, 6));
+        a.bar.setPosition(p.x, p.y - Math.max(22, a.sprite.displayHeight * 0.82)).setDepth(depthOf(a.tx, a.ty, 6));
         a.bar.scaleX = Math.max(0, a.hp / a.maxHp);
         a.bar.setVisible(!a.dead && a.hp < a.maxHp);
       }
@@ -692,7 +727,7 @@ export class WorldScene extends Phaser.Scene {
     this.actors = this.actors.filter((a) => a.kind !== "pet");
     if (!pet) return;
     const def = beastFromEnemy(pet.defId);
-    const key = ensureChar(this.textures, "pet_" + pet.defId, def?.palette ?? [0x203020, 0x408060, 0xa0e0b0], { beast: true, horns: true });
+    const key = ensureChar(this.textures, "pet_" + pet.defId, def?.palette ?? [0x203020, 0x408060, 0xa0e0b0], { style: styleForEnemy(pet.defId) });
     const p = iso(this.player.tx - 0.8, this.player.ty - 0.4);
     const sprite = this.add.image(p.x, p.y, `${key}_0_0`).setOrigin(0.5, 0.92);
     this.actors.push({
@@ -771,7 +806,7 @@ export class WorldScene extends Phaser.Scene {
 
   popup(a: Actor, text: string, color: string) {
     const p = iso(a.tx, a.ty);
-    const t = this.add.text(p.x, p.y - 26, text, { fontFamily: "monospace", fontSize: "10px", color }).setOrigin(0.5).setDepth(8000);
+    const t = this.add.text(p.x, p.y - 28, text, { fontFamily: FONT_SM, fontSize: "10px", color, resolution: 1 }).setOrigin(0.5).setDepth(8000);
     this.floaters.push({ t, life: 0.8 });
   }
 
