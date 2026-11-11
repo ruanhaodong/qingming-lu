@@ -7,7 +7,7 @@ import { Rng } from "../rng";
 import { GameState } from "../state";
 import type { LearnedSkill } from "../types";
 import { FxRuntime, actOf } from "../vfx/runtime";
-import { depthOf, iso, mapBounds } from "../world/iso";
+import { depthOf, iso, mapBounds, worldToTile } from "../world/iso";
 import { cellAt, generateMap, spawnPoint, type GameMap, type Spawn, walkable } from "../world/mapgen";
 
 type Kind = "player" | "enemy" | "npc" | "pet" | "gather" | "portal" | "chest" | "station" | "stele" | "boss" | "pool" | "chamber";
@@ -130,7 +130,7 @@ export class WorldScene extends Phaser.Scene {
     if (warp) { this.state.data.tileX = sp.tx; this.state.data.tileY = sp.ty; }
     this.spawnPlayer(this.state.data.tileX, this.state.data.tileY);
     const p = iso(this.player.tx, this.player.ty);
-    this.cameras.main.startFollow(this.player.sprite, true, 0.12, 0.12);
+    this.cameras.main.startFollow(this.player.sprite, true, 0.22, 0.22);
     this.cameras.main.setRoundPixels(true);
     const b = mapBounds(this.map.w, this.map.h);
     this.cameras.main.setBounds(b.x, b.y, b.w, b.h);
@@ -207,7 +207,7 @@ export class WorldScene extends Phaser.Scene {
     this.player = {
       kind: "player", id: "player", tx, ty, sprite, dir: 0, frame: 0, ft: 0,
       hp: this.state.data.hp, maxHp: this.state.data.maxHp, atk: this.state.atk(), def: this.state.def(),
-      speed: 2.4, dead: false, flash: 0, lock: 0, cd: 0, aggro: false,
+      speed: 7, dead: false, flash: 0, lock: 0, cd: 0, aggro: false,
     };
     this.actors.push(this.player);
   }
@@ -337,14 +337,14 @@ export class WorldScene extends Phaser.Scene {
     const len = Math.hypot(sx, sy);
     if (len < 0.15) return;
     sx /= len; sy /= len;
-    // screen-space to tile-space
-    const dtx = (sx / 32 + sy / 16) * this.player.speed * dt * 2.2;
-    const dty = (sy / 16 - sx / 32) * this.player.speed * dt * 2.2;
-    this.tryMove(this.player, dtx, dty);
+    // screen-space unit vector → tile direction, then walk at speed tiles/sec
+    const raw = worldToTile(sx, sy);
+    const tlen = Math.hypot(raw.tx, raw.ty) || 1;
+    this.tryMove(this.player, (raw.tx / tlen) * this.player.speed * dt, (raw.ty / tlen) * this.player.speed * dt);
     if (Math.abs(sx) > Math.abs(sy)) this.player.dir = sx > 0 ? 2 : 1;
     else this.player.dir = sy > 0 ? 0 : 3;
     this.player.ft += dt;
-    if (this.player.ft > 0.22) { this.player.ft = 0; this.player.frame ^= 1; }
+    if (this.player.ft > 0.12) { this.player.ft = 0; this.player.frame ^= 1; }
     this.state.data.facing = this.player.dir;
   }
 
