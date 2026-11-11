@@ -2,7 +2,7 @@ export const SAVE_KEY = "qingming-lu-save-v2";
 export const WIDTH = 640;
 export const HEIGHT = 360;
 export const TILE_W = 32;
-export const TILE_H = 16;
+export const TILE_H = 32;
 
 export type RealmId =
   | "lianqi" | "zhuji" | "jindan" | "yuanying" | "huashen"

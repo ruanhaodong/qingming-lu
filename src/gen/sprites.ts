@@ -1,7 +1,7 @@
 /** Atlas assembly: tiles, props, characters, icons, UI chrome. */
 
 import { addWorldArt } from "./tiles";
-import { drawCharacter, ensureChar, styleForEnemy, styleForNpc, type CharOpts, type CharStyle } from "./chars";
+import { CHAR_FRAMES, drawCharacter, ensureChar, styleForEnemy, styleForNpc, type CharOpts, type CharStyle } from "./chars";
 import { canv, px, rect, shade } from "./pix";
 
 export { drawCharacter, ensureChar, styleForEnemy, styleForNpc };
@@ -184,7 +184,7 @@ export function generateAtlas(textures: Phaser.Textures.TextureManager) {
   addWorldArt(add);
 
   const pPal = [0x102018, 0x2a6050, 0x80d0b0];
-  for (let d = 0; d < 4; d++) for (let f = 0; f < 2; f++) {
+  for (let d = 0; d < 4; d++) for (let f = 0; f < CHAR_FRAMES; f++) {
     add(`char_player_${d}_${f}`, drawCharacter(pPal, d, f, { weapon: true, style: "hero" }));
   }
 

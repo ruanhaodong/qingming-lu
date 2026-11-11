@@ -50,7 +50,44 @@ export function hash2(seed: number, x: number, y: number): number {
   return t - Math.floor(t);
 }
 
-/** Inclusive diamond test in pixel space. */
+/** Nearest-neighbor integer upscale (display tiles are 2× of 16px art). */
+export function scaleN(src: HTMLCanvasElement, n = 2): HTMLCanvasElement {
+  const { c, x } = canv(src.width * n, src.height * n);
+  x.imageSmoothingEnabled = false;
+  x.drawImage(src, 0, 0, c.width, c.height);
+  return c;
+}
+
+/** 1px dark outline around opaque pixels. Leave a 1px margin in the source. */
+export function outline(src: HTMLCanvasElement, col = "#181818"): HTMLCanvasElement {
+  const w = src.width, h = src.height;
+  const { c, x } = canv(w, h);
+  const data = src.getContext("2d")!.getImageData(0, 0, w, h).data;
+  const aAt = (X: number, Y: number) => {
+    if (X < 0 || Y < 0 || X >= w || Y >= h) return 0;
+    return data[(Y * w + X) * 4 + 3];
+  };
+  x.fillStyle = col;
+  for (let Y = 0; Y < h; Y++) for (let X = 0; X < w; X++) {
+    if (aAt(X, Y) >= 12) continue;
+    if (aAt(X - 1, Y) > 12 || aAt(X + 1, Y) > 12 || aAt(X, Y - 1) > 12 || aAt(X, Y + 1) > 12) {
+      x.fillRect(X, Y, 1, 1);
+    }
+  }
+  x.drawImage(src, 0, 0);
+  return c;
+}
+
+export function disk(x: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number, col: string, a = 1) {
+  for (let y = Math.floor(cy - ry); y <= Math.ceil(cy + ry); y++) {
+    for (let xx = Math.floor(cx - rx); xx <= Math.ceil(cx + rx); xx++) {
+      const u = (xx - cx) / rx, v = (y - cy) / ry;
+      if (u * u + v * v <= 1.02) px(x, xx, y, col, a);
+    }
+  }
+}
+
+/** Inclusive diamond test in pixel space. Kept for any leftover callers. */
 export function inDiamond(pxX: number, py: number, cx: number, cy: number, hw: number, hh: number): boolean {
   return Math.abs(pxX - cx) / hw + Math.abs(py - cy) / hh <= 1.001;
 }
@@ -70,71 +107,25 @@ export function fillDiamond(
   }
 }
 
-/** 2:1 iso block: top diamond plus left/right faces of `rise` pixels. */
-export function isoBlock(
-  x: CanvasRenderingContext2D,
-  cx: number, topY: number, hw: number, hh: number, rise: number,
-  top: string[], left: string[], right: string[],
-  seed = 1,
-) {
-  // faces first (behind), then top
-  for (let i = 0; i < rise; i++) {
-    // left face: from left-point to bottom-point, dropped i
-    for (let t = 0; t <= hw; t++) {
-      const u = t / hw;
-      const fx = cx - hw + t;
-      const fy = topY + hh * (t / hw) + i;
-      const col = left[Math.min(left.length - 1, Math.floor(hash2(seed, fx, fy) * left.length))];
-      const lit = i === 0 ? shade(col, 16) : i === rise - 1 ? shade(col, -20) : col;
-      px(x, fx, fy, lit);
-      if (t < hw && i < rise - 1) px(x, fx, fy + 1, lit);
-    }
-    for (let t = 0; t <= hw; t++) {
-      const fx = cx + t;
-      const fy = topY + hh * (1 - t / hw) + i; // wait, right face from top? 
-      // right face: from right-point (cx+hw, topY) to bottom (cx, topY+hh)
-      const rx = cx + hw - t;
-      const ry = topY + hh * (t / hw) + i;
-      const col = right[Math.min(right.length - 1, Math.floor(hash2(seed + 3, rx, ry) * right.length))];
-      const lit = i === 0 ? shade(col, 8) : i === rise - 1 ? shade(col, -24) : col;
-      px(x, rx, ry, lit);
-    }
-  }
-  fillDiamond(x, cx, topY, hw, hh, (dx, dy, u, v) => {
-    const edge = Math.abs(u) + Math.abs(v) > 0.88;
-    const n = hash2(seed, dx, dy);
-    const hi = v < 0 && u < 0;
-    const pal = top;
-    let idx = Math.floor(n * pal.length);
-    if (hi) idx = Math.min(pal.length - 1, idx + 1);
-    if (edge) idx = Math.max(0, idx - 1);
-    return pal[idx];
-  });
-  // ridge highlight on top-left edge
-  for (let t = 0; t <= hw; t++) {
-    const fx = cx - hw + t;
-    const fy = topY - hh + Math.round((hh / hw) * t);
-    px(x, fx, fy, shade(top[top.length - 1], 10), 0.7);
-  }
-}
-
+/** GBA-like overworld palettes: clean, saturated, limited dither. Original, not ripped. */
 export const PAL = {
-  grass: ["#0a1610", "#102018", "#163024", "#1c3c2a", "#245436", "#2e6a42", "#3c8050"],
-  grassLit: ["#143022", "#1c4030", "#285838", "#347848", "#4a985c"],
-  dirt: ["#1a1410", "#241c14", "#322418", "#403020", "#52402c", "#6a5440"],
-  path: ["#2a2018", "#3a2c1e", "#4a3a28", "#5a4a34", "#6c5a40", "#7a6a4c"],
-  cobble: ["#1c1c18", "#2a2a26", "#3a3a34", "#4c4c44", "#5e5e54", "#6a6a60"],
-  stone: ["#141618", "#1e2226", "#2c3236", "#3c4448", "#50585c", "#646c70"],
-  water: ["#061018", "#0a1a24", "#0e2834", "#143848", "#1a4c60", "#246880", "#3a88a0"],
-  shallow: ["#0a2428", "#12383c", "#1a5050", "#247068", "#38a090"],
-  sand: ["#2a2418", "#3c3420", "#524830", "#6a5c40", "#847456", "#9a8868"],
-  floor: ["#161210", "#221c18", "#2e2620", "#3a3228", "#4a4236"],
-  plank: ["#1a120c", "#261a12", "#342418", "#443022", "#543c28", "#644830"],
-  ash: ["#101014", "#1a1a20", "#282830", "#383840", "#4a4a54"],
-  snow: ["#243038", "#3a4a50", "#5a6c70", "#8aa0a4", "#c8d8dc"],
-  garden: ["#142418", "#1c3020", "#284020", "#1a3828", "#3a5828"],
-  rail: ["#1a1612", "#2a241c", "#3a3428"],
-  moss: ["#0c1c14", "#14281c", "#1c3828", "#284c34", "#186030"],
+  grass: ["#0c4810", "#186818", "#209020", "#28a828", "#38c038", "#58d050"],
+  grassLit: ["#186818", "#28a020", "#40c040", "#70d860", "#a0e880"],
+  dirt: ["#5a3818", "#7a5020", "#9a6830", "#b88040", "#d09850", "#e0b068"],
+  path: ["#8a6a30", "#a88840", "#c8a050", "#d8b460", "#e8c878", "#f0d890"],
+  cobble: ["#6a6860", "#848078", "#9c9890", "#b4b0a8", "#c8c4bc", "#dcd8d0"],
+  stone: ["#303438", "#484c50", "#606468", "#787c80", "#94989c", "#b0b4b8"],
+  water: ["#104878", "#1868a8", "#2088d0", "#38a0e8", "#58b8f0", "#90d4f8"],
+  shallow: ["#186868", "#208888", "#30a8a0", "#48c8b8", "#78e0d0"],
+  sand: ["#a88040", "#c09850", "#d8b060", "#e8c878", "#f0d890"],
+  floor: ["#3a3028", "#4a4034", "#5a5040", "#6a6050", "#7a7060"],
+  plank: ["#4a3018", "#5a3c20", "#6a4828", "#7a5430", "#8a6440"],
+  ash: ["#202028", "#303038", "#44444c", "#585860", "#707078"],
+  snow: ["#608090", "#88a8b0", "#b0c8d0", "#d0e4e8", "#f0f8f8"],
+  garden: ["#184818", "#206020", "#287028", "#389038", "#50b040"],
+  rail: ["#3a3428", "#4a4434", "#5a5444"],
+  moss: ["#0c3810", "#145018", "#1c6820", "#288828", "#40a838"],
+  bank: ["#5a4020", "#7a5830", "#3a8020", "#186018"],
 };
 
 export type TileKind =

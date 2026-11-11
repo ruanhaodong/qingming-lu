@@ -16,13 +16,15 @@ export class TitleScene extends Phaser.Scene {
   }
 
   create() {
-    this.cameras.main.setBackgroundColor(0x070b09);
+    this.cameras.main.setBackgroundColor(0x68b8e8);
+    if (this.textures.exists("title_bg")) {
+      this.add.image(0, 0, "title_bg").setOrigin(0, 0).setDepth(0);
+    }
     this.fx = new FxRuntime(this);
-    this.fx.play("weather/god-rays", WIDTH / 2, 30, { light: 0.7 }, 1);
-    this.fx.play("weather/fireflies", WIDTH / 2, 70, {}, 2);
+    this.add.rectangle(WIDTH / 2, HEIGHT - 22, WIDTH, 36, 0x08140e, 0.72).setDepth(190);
 
     // lacquer plaque behind the title only — taglines sit below the frame
-    this.add.rectangle(WIDTH / 2, 70, 300, 36, 0x0e1612, 0.55).setStrokeStyle(1, 0x80c0a0).setDepth(180);
+    this.add.rectangle(WIDTH / 2, 70, 300, 36, 0x0e1612, 0.82).setStrokeStyle(1, 0x80c0a0).setDepth(180);
     this.add.rectangle(WIDTH / 2, 70, 288, 24, 0x121c16, 0.0).setStrokeStyle(1, 0x3a6a50).setDepth(180);
     for (const [x, y, ox, oy] of [
       [WIDTH / 2 - 150, 52, 1, 1],

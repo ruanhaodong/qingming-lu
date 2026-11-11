@@ -1,13 +1,14 @@
 import Phaser from "phaser";
 import { ENEMY_MAP, EVENT_MAP, ITEM_MAP, NPC_MAP, REGION_MAP, SKILL_MAP, beastFromEnemy } from "../data";
+import { CHAR_FRAMES } from "../gen/chars";
 import { ensureChar, styleForEnemy, styleForNpc } from "../gen/sprites";
 import { FONT_SM } from "../hud/Hud";
 import { Hud } from "../hud/Hud";
 import { Rng } from "../rng";
 import { GameState } from "../state";
-import type { LearnedSkill } from "../types";
+import { TILE_H, TILE_W } from "../types";
 import { FxRuntime, actOf } from "../vfx/runtime";
-import { depthOf, iso, mapBounds, worldToTile } from "../world/iso";
+import { depthOf, foot, iso, mapBounds } from "../world/iso";
 import { cellAt, generateMap, spawnPoint, type GameMap, type Spawn, walkable } from "../world/mapgen";
 
 type Kind = "player" | "enemy" | "npc" | "pet" | "gather" | "portal" | "chest" | "station" | "stele" | "boss" | "pool" | "chamber";
@@ -152,13 +153,23 @@ export class WorldScene extends Phaser.Scene {
     };
     const order: [number, number][] = [];
     for (let y = 0; y < this.map.h; y++) for (let x = 0; x < this.map.w; x++) order.push([x, y]);
-    order.sort((a, b) => (a[0] + a[1]) - (b[0] + b[1]));
+    // North to south so tall wall faces overlap correctly on the baked canvas.
+    order.sort((a, c2) => a[1] - c2[1] || a[0] - c2[0]);
     const biome = REGION_MAP[this.map.id]?.biome;
     const isLand = (g: string) => g !== "water" && g !== "shallow" && g !== "cliff";
+    const isGrass = (g: string) => g === "grass" || g === "grass2" || g === "flower" || g === "moss";
+    const isPath = (g: string) => g === "path" || g === "cobble" || g === "plank";
+    const variantOf = (x: number, y: number, g: string) => {
+      const h = (x * 3 + y * 7 + g.length) & 3;
+      if (h === 1 && srcOf("tile_" + g + "_b")) return "_b";
+      if (h === 2 && srcOf("tile_" + g + "_c")) return "_c";
+      return "";
+    };
     for (const [x, y] of order) {
       const cell = cellAt(this.map, x, y)!;
       const p = iso(x, y);
-      const variant = ((x * 3 + y * 7) & 1) ? "_b" : "";
+      const dx0 = p.x - TILE_W / 2 - b.x;
+      const dy0 = p.y - TILE_H / 2 - b.y;
       if (cell.g === "cliff") {
         const block =
           this.map.id === "dungeon_mine" ? "block_mine" :
@@ -166,24 +177,57 @@ export class WorldScene extends Phaser.Scene {
           biome === "forbidden" ? "block_ash" :
           biome === "ruins" ? "block_stone" :
           "block_cliff";
-        const src = srcOf(block) ?? srcOf("tile_cliff");
-        if (src) ctx.drawImage(src, p.x - 16 - b.x, p.y - 8 - b.y);
+        const nbs: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+        const edge = nbs.some(([dx, dy]) => {
+          const n = cellAt(this.map, x + dx, y + dy);
+          return !!n && n.g !== "cliff";
+        });
+        if (edge) {
+          const src = srcOf(block) ?? srcOf("tile_stone");
+          if (src) ctx.drawImage(src, dx0, dy0 + TILE_H - src.height);
+        } else {
+          const fill = srcOf("tile_stone") ?? srcOf("tile_ash");
+          if (fill) {
+            ctx.drawImage(fill, dx0, dy0);
+            ctx.fillStyle = "rgba(0,0,0,0.45)";
+            ctx.fillRect(dx0, dy0, TILE_W, TILE_H);
+          } else {
+            ctx.fillStyle = "#121418";
+            ctx.fillRect(dx0, dy0, TILE_W, TILE_H);
+          }
+        }
         continue;
       }
-      const tileKey = "tile_" + cell.g + (srcOf("tile_" + cell.g + variant) ? variant : "");
+      const tileKey = "tile_" + cell.g + variantOf(x, y, cell.g);
       const src = srcOf(tileKey) ?? srcOf("tile_grass");
-      if (src) ctx.drawImage(src, p.x - 16 - b.x, p.y - 8 - b.y);
-      // shore foam on water next to land
+      if (src) ctx.drawImage(src, dx0, dy0);
+      const nbs: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
       if (cell.g === "water" || cell.g === "shallow") {
-        const nbs: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
         for (const [dx, dy] of nbs) {
           const n = cellAt(this.map, x + dx, y + dy);
           if (!n || !isLand(n.g)) continue;
-          ctx.fillStyle = "rgba(180, 230, 230, 0.45)";
-          const sx = p.x - 16 - b.x + 16 + dx * 6;
-          const sy = p.y - 8 - b.y + 8 + dy * 3;
-          ctx.fillRect(sx | 0, sy | 0, 2, 1);
-          ctx.fillRect((sx + 2) | 0, (sy + 1) | 0, 1, 1);
+          // grassy / dirt bank on the water's edge
+          ctx.fillStyle = n.g === "sand" ? "#c09850" : "#3a8020";
+          if (dx === 1) ctx.fillRect(dx0 + TILE_W - 4, dy0, 4, TILE_H);
+          if (dx === -1) ctx.fillRect(dx0, dy0, 4, TILE_H);
+          if (dy === 1) ctx.fillRect(dx0, dy0 + TILE_H - 4, TILE_W, 4);
+          if (dy === -1) ctx.fillRect(dx0, dy0, TILE_W, 4);
+          ctx.fillStyle = "rgba(200, 240, 248, 0.55)";
+          if (dx === 1) ctx.fillRect(dx0 + TILE_W - 6, dy0 + 6, 2, 4);
+          if (dx === -1) ctx.fillRect(dx0 + 4, dy0 + 10, 2, 3);
+          if (dy === 1) ctx.fillRect(dx0 + 8, dy0 + TILE_H - 6, 4, 2);
+          if (dy === -1) ctx.fillRect(dx0 + 12, dy0 + 4, 4, 2);
+        }
+      }
+      if (isPath(cell.g)) {
+        for (const [dx, dy] of nbs) {
+          const n = cellAt(this.map, x + dx, y + dy);
+          if (!n || !isGrass(n.g)) continue;
+          ctx.fillStyle = "rgba(40, 120, 32, 0.45)";
+          if (dx === 1) ctx.fillRect(dx0 + TILE_W - 3, dy0, 3, TILE_H);
+          if (dx === -1) ctx.fillRect(dx0, dy0, 3, TILE_H);
+          if (dy === 1) ctx.fillRect(dx0, dy0 + TILE_H - 3, TILE_W, 3);
+          if (dy === -1) ctx.fillRect(dx0, dy0, TILE_W, 3);
         }
       }
     }
@@ -195,15 +239,15 @@ export class WorldScene extends Phaser.Scene {
   placeProps() {
     for (const pr of this.map.props) {
       if (!this.textures.exists(pr.key)) continue;
-      const p = iso(pr.tx, pr.ty);
-      const img = this.add.image(p.x, p.y, pr.key).setOrigin(0.5, 0.9).setDepth(depthOf(pr.tx, pr.ty, 2));
+      const f = foot(pr.tx, pr.ty);
+      const img = this.add.image(f.x, f.y, pr.key).setOrigin(0.5, 1.0).setDepth(depthOf(pr.tx, pr.ty, 2));
       this.props.push(img);
     }
   }
 
   spawnPlayer(tx: number, ty: number) {
-    const p = iso(tx, ty);
-    const sprite = this.add.image(p.x, p.y, "char_player_0_0").setOrigin(0.5, 0.92).setDepth(depthOf(tx, ty, 4));
+    const f = foot(tx, ty);
+    const sprite = this.add.image(f.x, f.y, "char_player_0_0").setOrigin(0.5, 1.0).setDepth(depthOf(tx, ty, 4));
     this.player = {
       kind: "player", id: "player", tx, ty, sprite, dir: 0, frame: 0, ft: 0,
       hp: this.state.data.hp, maxHp: this.state.data.maxHp, atk: this.state.atk(), def: this.state.def(),
@@ -240,14 +284,16 @@ export class WorldScene extends Phaser.Scene {
     if (s.kind === "npc") {
       const npc = NPC_MAP[s.id];
       const key = ensureChar(this.textures, "npc_" + s.id, npc?.palette ?? [0x203028, 0x4a7060, 0xc8d8c0], { weapon: false, style: styleForNpc(s.id) });
-      const sprite = this.add.image(p.x, p.y, `${key}_0_0`).setOrigin(0.5, 0.92).setDepth(depthOf(s.tx, s.ty, 4));
+      const f = foot(s.tx, s.ty);
+      const sprite = this.add.image(f.x, f.y, `${key}_0_0`).setOrigin(0.5, 1.0).setDepth(depthOf(s.tx, s.ty, 4));
       this.actors.push({ kind: "npc", id: s.id, tx: s.tx, ty: s.ty, sprite, dir: 0, frame: 0, ft: 0, hp: 1, maxHp: 1, atk: 0, def: 0, speed: 0, dead: false, flash: 0, lock: 0, cd: 0, aggro: false, name: npc?.name });
     } else if (s.kind === "enemy" || s.kind === "boss") {
       const def = ENEMY_MAP[s.id];
       if (!def) return;
       const key = ensureChar(this.textures, "en_" + s.id, def.palette, { weapon: def.kind === "human" || def.named, style: styleForEnemy(s.id, def.kind, def.motif, def.boss) });
-      const sprite = this.add.image(p.x, p.y, `${key}_0_0`).setOrigin(0.5, 0.92).setDepth(depthOf(s.tx, s.ty, 4));
-      const bar = this.add.rectangle(p.x, p.y - 28, 16, 2, 0xc04040).setOrigin(0.5, 1).setDepth(depthOf(s.tx, s.ty, 6));
+      const f = foot(s.tx, s.ty);
+      const sprite = this.add.image(f.x, f.y, `${key}_0_0`).setOrigin(0.5, 1.0).setDepth(depthOf(s.tx, s.ty, 4));
+      const bar = this.add.rectangle(f.x, f.y - 28, 16, 2, 0xc04040).setOrigin(0.5, 1).setDepth(depthOf(s.tx, s.ty, 6));
       this.actors.push({
         kind: s.kind, id: s.id, enemyId: s.id, tx: s.tx + rng.float(-0.2, 0.2), ty: s.ty + rng.float(-0.2, 0.2),
         sprite, dir: 0, frame: 0, ft: 0, hp: def.hp, maxHp: def.hp, atk: def.atk, def: def.def,
@@ -335,16 +381,18 @@ export class WorldScene extends Phaser.Scene {
     const j = this.hud.moveVec();
     sx += j.x; sy += j.y;
     const len = Math.hypot(sx, sy);
-    if (len < 0.15) return;
+    if (len < 0.15) {
+      this.player.frame = 0;
+      this.player.ft = 0;
+      return;
+    }
     sx /= len; sy /= len;
-    // screen-space unit vector → tile direction, then walk at speed tiles/sec
-    const raw = worldToTile(sx, sy);
-    const tlen = Math.hypot(raw.tx, raw.ty) || 1;
-    this.tryMove(this.player, (raw.tx / tlen) * this.player.speed * dt, (raw.ty / tlen) * this.player.speed * dt);
+    // Screen-space unit vector maps 1:1 onto tile axes in this orthogonal view.
+    this.tryMove(this.player, sx * this.player.speed * dt, sy * this.player.speed * dt);
     if (Math.abs(sx) > Math.abs(sy)) this.player.dir = sx > 0 ? 2 : 1;
     else this.player.dir = sy > 0 ? 0 : 3;
     this.player.ft += dt;
-    if (this.player.ft > 0.12) { this.player.ft = 0; this.player.frame ^= 1; }
+    if (this.player.ft > 0.07) { this.player.ft = 0; this.player.frame = (this.player.frame + 1) % CHAR_FRAMES; }
     this.state.data.facing = this.player.dir;
   }
 
@@ -362,7 +410,7 @@ export class WorldScene extends Phaser.Scene {
   syncSprites() {
     for (const a of this.actors) {
       if (a.dead && a.kind !== "player") continue;
-      const p = iso(a.tx, a.ty);
+      const p = foot(a.tx, a.ty);
       a.sprite.setPosition(p.x, p.y).setDepth(depthOf(a.tx, a.ty, 4));
       const key = a.kind === "player" ? `char_player_${a.dir}_${a.frame}` :
         a.kind === "npc" ? `npc_${a.id}_${a.dir}_${a.frame}` :
@@ -371,13 +419,13 @@ export class WorldScene extends Phaser.Scene {
       if (key && this.textures.exists(key)) a.sprite.setTexture(key);
       if (a.flash > 0) { a.flash -= 0.05; a.sprite.setTint(0xff8080); } else a.sprite.clearTint();
       if (a.bar) {
-        a.bar.setPosition(p.x, p.y - Math.max(22, a.sprite.displayHeight * 0.82)).setDepth(depthOf(a.tx, a.ty, 6));
+        a.bar.setPosition(p.x, p.y - Math.max(24, a.sprite.displayHeight + 2)).setDepth(depthOf(a.tx, a.ty, 6));
         a.bar.scaleX = Math.max(0, a.hp / a.maxHp);
         a.bar.setVisible(!a.dead && a.hp < a.maxHp);
       }
       if (a.lock > 0) a.lock -= 0.016;
     }
-    this.player.sprite.setPosition(iso(this.player.tx, this.player.ty).x, iso(this.player.tx, this.player.ty).y);
+    this.player.sprite.setPosition(foot(this.player.tx, this.player.ty).x, foot(this.player.tx, this.player.ty).y);
   }
 
   nearInteract(): Actor | undefined {
@@ -422,7 +470,7 @@ export class WorldScene extends Phaser.Scene {
       this.hud.toast(`采得${ITEM_MAP[n.id]?.name}`);
       n.dead = true;
       n.sprite.setVisible(false);
-      const prop = this.props.find((p) => Math.abs(p.x - iso(n.tx, n.ty).x) < 2 && Math.abs(p.y - iso(n.tx, n.ty).y) < 2);
+      const prop = this.props.find((p) => Math.abs(p.x - foot(n.tx, n.ty).x) < 4 && Math.abs(p.y - foot(n.tx, n.ty).y) < 4);
       prop?.destroy();
     } else if (n.kind === "portal") this.travel(n.id);
     else if (n.kind === "chest") this.openChest(n);
@@ -728,8 +776,8 @@ export class WorldScene extends Phaser.Scene {
     if (!pet) return;
     const def = beastFromEnemy(pet.defId);
     const key = ensureChar(this.textures, "pet_" + pet.defId, def?.palette ?? [0x203020, 0x408060, 0xa0e0b0], { style: styleForEnemy(pet.defId) });
-    const p = iso(this.player.tx - 0.8, this.player.ty - 0.4);
-    const sprite = this.add.image(p.x, p.y, `${key}_0_0`).setOrigin(0.5, 0.92);
+    const p = foot(this.player.tx - 0.8, this.player.ty - 0.4);
+    const sprite = this.add.image(p.x, p.y, `${key}_0_0`).setOrigin(0.5, 1.0);
     this.actors.push({
       kind: "pet", id: pet.defId, tx: this.player.tx - 0.8, ty: this.player.ty - 0.4, sprite,
       dir: 0, frame: 0, ft: 0, hp: pet.hp, maxHp: pet.maxHp, atk: pet.atk, def: pet.def,
@@ -749,7 +797,7 @@ export class WorldScene extends Phaser.Scene {
     petA.tx += (tx - petA.tx) * Math.min(1, 4 * dt);
     petA.ty += (ty - petA.ty) * Math.min(1, 4 * dt);
     petA.ft += dt;
-    if (petA.ft > 0.2) { petA.ft = 0; petA.frame ^= 1; }
+    if (petA.ft > 0.1) { petA.ft = 0; petA.frame = (petA.frame + 1) % CHAR_FRAMES; }
     petA.cd -= dt;
     const foe = this.pickTarget(2.8);
     if (foe && petA.cd <= 0) {
@@ -769,7 +817,7 @@ export class WorldScene extends Phaser.Scene {
       if (d < aggroR) a.aggro = true;
       a.cd -= dt;
       a.ft += dt;
-      if (a.ft > 0.25) { a.ft = 0; a.frame ^= 1; }
+      if (a.ft > 0.12) { a.ft = 0; a.frame = (a.frame + 1) % CHAR_FRAMES; }
       if (a.aggro && !this.player.dead) {
         this.faceToward(a, this.player);
         if (d > 1.2) {
@@ -805,8 +853,8 @@ export class WorldScene extends Phaser.Scene {
   }
 
   popup(a: Actor, text: string, color: string) {
-    const p = iso(a.tx, a.ty);
-    const t = this.add.text(p.x, p.y - 28, text, { fontFamily: FONT_SM, fontSize: "10px", color, resolution: 1 }).setOrigin(0.5).setDepth(8000);
+    const p = foot(a.tx, a.ty);
+    const t = this.add.text(p.x, p.y - Math.max(28, a.sprite.displayHeight + 2), text, { fontFamily: FONT_SM, fontSize: "10px", color, resolution: 1 }).setOrigin(0.5).setDepth(8000);
     this.floaters.push({ t, life: 0.8 });
   }
 

@@ -370,11 +370,11 @@ function paintVillage(m: GameMap, _rng: Rng) {
   }
   m.props.push({ key: "obj_plot", tx: 10, ty: 16, block: false, kind: "decor" });
   m.props.push({ key: "obj_plot", tx: 10, ty: 18, block: false, kind: "decor" });
-  m.props.push({ key: "obj_fence_nw", tx: 9, ty: 15, block: true, kind: "decor" });
-  m.props.push({ key: "obj_fence_nw", tx: 9, ty: 17, block: true, kind: "decor" });
-  m.props.push({ key: "obj_fence_nw", tx: 9, ty: 19, block: true, kind: "decor" });
-  m.props.push({ key: "obj_fence_ne", tx: 10, ty: 15, block: true, kind: "decor" });
-  m.props.push({ key: "obj_fence_ne", tx: 11, ty: 19, block: true, kind: "decor" });
+  m.props.push({ key: "obj_fence_v", tx: 9, ty: 15, block: true, kind: "decor" });
+  m.props.push({ key: "obj_fence_v", tx: 9, ty: 17, block: true, kind: "decor" });
+  m.props.push({ key: "obj_fence_v", tx: 9, ty: 19, block: true, kind: "decor" });
+  m.props.push({ key: "obj_fence_h", tx: 10, ty: 15, block: true, kind: "decor" });
+  m.props.push({ key: "obj_fence_h", tx: 11, ty: 19, block: true, kind: "decor" });
 
   const houses: [number, number, string, boolean][] = [
     [11, 15, "obj_house", false],
@@ -413,8 +413,8 @@ function paintVillage(m: GameMap, _rng: Rng) {
     m.props.push({ key: "obj_lantern", tx: lx, ty: ly, block: false, kind: "decor" });
   }
   // fences along the south edge of the village
-  for (let x = 10; x <= 13; x++) m.props.push({ key: "obj_fence_ne", tx: x, ty: 22, block: true, kind: "decor" });
-  for (let x = 16; x <= 20; x++) m.props.push({ key: "obj_fence_ne", tx: x, ty: 22, block: true, kind: "decor" });
+  for (let x = 10; x <= 13; x++) m.props.push({ key: "obj_fence_h", tx: x, ty: 22, block: true, kind: "decor" });
+  for (let x = 16; x <= 20; x++) m.props.push({ key: "obj_fence_h", tx: x, ty: 22, block: true, kind: "decor" });
   // yard trees
   m.props.push({ key: "obj_cherry", tx: 12, ty: 13, block: true, kind: "decor" });
   m.props.push({ key: "obj_tree", tx: 21, ty: 20, block: true, kind: "decor" });
